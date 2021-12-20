@@ -186,108 +186,108 @@ jobs:
         asset_name: rdm-${{ env.VERSION }}.exe
         asset_content_type: application/vnd.microsoft.portable-executable
 
-  build_on_osx:
-    needs: create_release
-    runs-on: macos-latest
+#   build_on_osx:
+#     needs: create_release
+#     runs-on: macos-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - uses: actions/checkout@v2
-      with:
-        repository: uglide/RedisDesktopManager
-        path: rdm
-        submodules: 'recursive'
-        ref: ${{ env.RDM_REF }}
+#     # Steps represent a sequence of tasks that will be executed as part of the job
+#     steps:
+#     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+#     - uses: actions/checkout@v2
+#       with:
+#         repository: uglide/RedisDesktopManager
+#         path: rdm
+#         submodules: 'recursive'
+#         ref: ${{ env.RDM_REF }}
 
-    - name: build lz4
-      run: |
-        cd rdm/3rdparty/lz4/build/cmake
-        cmake -DLZ4_BUNDLED_MODE=ON -DBUILD_SHARED_LIBS=ON --build .
-        make -s -j 8
+#     - name: build lz4
+#       run: |
+#         cd rdm/3rdparty/lz4/build/cmake
+#         cmake -DLZ4_BUNDLED_MODE=ON -DBUILD_SHARED_LIBS=ON --build .
+#         make -s -j 8
 
-    # install QT   
-    - name: install QT
-      uses: jurplel/install-qt-action@v2
-      with: 
-        version: '5.15.1'
-        modules: 'qtcharts'
+#     # install QT   
+#     - name: install QT
+#       uses: jurplel/install-qt-action@v2
+#       with: 
+#         version: '5.15.1'
+#         modules: 'qtcharts'
     
-    - name: copy info.plist
-      run: |
-        cd rdm
-        cd ./src && cp ./resources/Info.plist.sample ./resources/Info.plist
+#     - name: copy info.plist
+#       run: |
+#         cd rdm
+#         cd ./src && cp ./resources/Info.plist.sample ./resources/Info.plist
     
-    - name: setup python
-      run: |
-        brew unlink python@3.9
-        brew install python@3.7
-        brew link --overwrite python@3.7
+#     - name: setup python
+#       run: |
+#         brew unlink python@3.9
+#         brew install python@3.7
+#         brew link --overwrite python@3.7
     
-    # 使用私有库,egg-links时-t不能同时使用，--user解决权限问题
-    # https://github.com/UnitedIncome/serverless-python-requirements/issues/240
-    # https://github.com/pypa/pip/issues/4390
-    # https://github.com/pypa/pip/issues/4139
-    # https://github.com/pypa/pip/issues/562
-    # sudo pip3 install --prefix . -r $GITHUB_WORKSPACE/rdm/src/py/requirements.txt
-    # sudo pip3 install -t . -r $GITHUB_WORKSPACE/rdm/src/py/requirements.txt
-    - name: pip install
-      run: |
-        cd rdm
-        mkdir -p bin/osx/release && cd bin/osx/release
-        cp -Rf $GITHUB_WORKSPACE/rdm/src/py .
-        cd py
-        echo six >> requirements.txt
-        sudo pip3 install -t . -r requirements.txt
-        sudo python3 -m compileall -b .
-        sudo find . -name "*.py" | sudo xargs rm -rf
-        sudo find . -name "__pycache__" | sudo xargs rm -rf
-        sudo find . -name "*.dist-info" | sudo xargs rm -rf
-        sudo find . -name "*.egg-info" | sudo xargs rm -rf
+#     # 使用私有库,egg-links时-t不能同时使用，--user解决权限问题
+#     # https://github.com/UnitedIncome/serverless-python-requirements/issues/240
+#     # https://github.com/pypa/pip/issues/4390
+#     # https://github.com/pypa/pip/issues/4139
+#     # https://github.com/pypa/pip/issues/562
+#     # sudo pip3 install --prefix . -r $GITHUB_WORKSPACE/rdm/src/py/requirements.txt
+#     # sudo pip3 install -t . -r $GITHUB_WORKSPACE/rdm/src/py/requirements.txt
+#     - name: pip install
+#       run: |
+#         cd rdm
+#         mkdir -p bin/osx/release && cd bin/osx/release
+#         cp -Rf $GITHUB_WORKSPACE/rdm/src/py .
+#         cd py
+#         echo six >> requirements.txt
+#         sudo pip3 install -t . -r requirements.txt
+#         sudo python3 -m compileall -b .
+#         sudo find . -name "*.py" | sudo xargs rm -rf
+#         sudo find . -name "__pycache__" | sudo xargs rm -rf
+#         sudo find . -name "*.dist-info" | sudo xargs rm -rf
+#         sudo find . -name "*.egg-info" | sudo xargs rm -rf
 
-    - name: release translations
-      run: |
-        cd rdm/src
-        lupdate rdm.pro
-        lrelease -verbose rdm.pro
+#     - name: release translations
+#       run: |
+#         cd rdm/src
+#         lupdate rdm.pro
+#         lrelease -verbose rdm.pro
 
-    # brew install tree && tree -a
-    # 去掉initUpdater不然报Please download new version of Redis Desktop Manager，不能使用
-    # sed -i '.back' 's/initUpdater();/\/\/initUpdater();/g' ./app/app.cpp
-    # macdeployqt
-    # https://doc.qt.io/qt-5/macos-deployment.html
-    # Qt Translations are not being copied
-    # https://github.com/probonopd/linuxdeployqt/issues/115
-    - name: build
-      id: build
-      run: |
-        python ./rdm/build/utils/set_version.py ${{ env.VERSION }} > ./rdm/src/version.h
-        cd rdm/src
-        qmake rdm.pro CONFIG-=debug
-        make -s -j 8
+#     # brew install tree && tree -a
+#     # 去掉initUpdater不然报Please download new version of Redis Desktop Manager，不能使用
+#     # sed -i '.back' 's/initUpdater();/\/\/initUpdater();/g' ./app/app.cpp
+#     # macdeployqt
+#     # https://doc.qt.io/qt-5/macos-deployment.html
+#     # Qt Translations are not being copied
+#     # https://github.com/probonopd/linuxdeployqt/issues/115
+#     - name: build
+#       id: build
+#       run: |
+#         python ./rdm/build/utils/set_version.py ${{ env.VERSION }} > ./rdm/src/version.h
+#         cd rdm/src
+#         qmake rdm.pro CONFIG-=debug
+#         make -s -j 8
 
-    - name: copy translations
-      run: |
-        cd rdm/src
-        mkdir ../bin/osx/release/RDM.app/Contents/translations
-        cp -f ./resources/translations/*.qm ../bin/osx/release/RDM.app/Contents/translations
+#     - name: copy translations
+#       run: |
+#         cd rdm/src
+#         mkdir ../bin/osx/release/RDM.app/Contents/translations
+#         cp -f ./resources/translations/*.qm ../bin/osx/release/RDM.app/Contents/translations
 
-    - name: package
-      id: package
-      run: |
-        cd rdm/bin/osx/release
-        zip -q -r release.zip .
-        cp -Rf py ./RDM.app/Contents/Resources/
-        otool -L ./RDM.app/Contents/MacOS/RDM
-        macdeployqt ./RDM.app -qmldir=../../../src/qml -always-overwrite -dmg
+#     - name: package
+#       id: package
+#       run: |
+#         cd rdm/bin/osx/release
+#         zip -q -r release.zip .
+#         cp -Rf py ./RDM.app/Contents/Resources/
+#         otool -L ./RDM.app/Contents/MacOS/RDM
+#         macdeployqt ./RDM.app -qmldir=../../../src/qml -always-overwrite -dmg
 
-    - name: Upload Release Asset
-      id: upload-release-asset 
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ needs.create_release.outputs.upload_url }}
-        asset_path: rdm/bin/osx/release/RDM.dmg
-        asset_name: RDM.dmg
-        asset_content_type: application/dmg
+#     - name: Upload Release Asset
+#       id: upload-release-asset 
+#       uses: actions/upload-release-asset@v1
+#       env:
+#         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#       with:
+#         upload_url: ${{ needs.create_release.outputs.upload_url }}
+#         asset_path: rdm/bin/osx/release/RDM.dmg
+#         asset_name: RDM.dmg
+#         asset_content_type: application/dmg

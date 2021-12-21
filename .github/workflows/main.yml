@@ -1,5 +1,6 @@
 # http://docs.redisdesktop.com/en/latest/install/
 # https://github.com/actions/virtual-environments/blob/master/images/win/Windows2019-Readme.md
+# https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-syntax-for-github-actions
 
 # This is a basic workflow to help you get started with Actions
 name: CI for redis desktop manager
@@ -8,20 +9,24 @@ name: CI for redis desktop manager
 # events but only for the master branch
 on:
   push:
-    branches: [ master ]
+    branches: [ pre-release ]
     paths-ignore: 
       - 'README.md'
       - 'LICENSE'
   pull_request:
-    branches: [ master ]
+    branches: [ pre-release ]
     paths-ignore: 
       - 'README.md'
       - 'LICENSE'
+  schedule:
+    - cron: '0 12 * * *' # Runs at 22:00 UTC every day
 
 env:
-  RDM_REF: 2021.3
-  VERSION: 2021.3.0
-  PYTHON_EMBEDDED_VERSION: 3.7.9
+  RDM_REF: 2021
+  VERSION: 2021.99.0
+  PY_LIB_VERSION: 38
+  PYTHON_EMBEDDED_VERSION: 3.8.10
+  CMAKE_VS: Visual Studio 16 2019
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -37,32 +42,29 @@ jobs:
       #   with:
       #     fetch-depth: 0
 
+      # delete old release
+      - uses: dev-drprasad/delete-tag-and-release@v0.1.2
+        with:
+          delete_release: true # default: false
+          tag_name: ${{ env.RDM_REF }}-nightly # tag name to delete
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
         with:
-          tag_name: ${{ env.RDM_REF }}
-          release_name: v${{ env.RDM_REF }}
+          tag_name: ${{ env.RDM_REF }}-nightly
+          release_name: v${{ env.RDM_REF }}-nightly
           body: |
-            ${{ env.RDM_REF }}
+            ${{ env.RDM_REF }}-nightly
           draft: false
-          prerelease: false
+          prerelease: true
 
   build_on_windows:
     needs: create_release
-    strategy:
-      matrix:
-        #configuration: [Debug, Release]
-        configuration: [Release]
-        qt_target: [Desktop]
-        qt_arch: [win64_msvc2019_64]
-        # 额外设置msvc_arch
-        include:
-          - qt_arch: win64_msvc2019_64
-            msvc_arch: x64
-
     runs-on: windows-latest
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -96,8 +98,27 @@ jobs:
     - name: build lz4
       run: |
         cd rdm/3rdparty/lz4/build/cmake
-        cmake -G "Visual Studio 16 2019" -A x64 -DLZ4_BUNDLED_MODE=ON -DBUILD_SHARED_LIBS=ON --build .
-        cmake --build . --config "Release"
+        cmake -G "${{ env.CMAKE_VS }}" -A x64 -DLZ4_BUNDLED_MODE=ON -DBUILD_SHARED_LIBS=ON -B .
+        cmake --build . --config Release
+
+    - name: build zstd
+      run: |
+        cd rdm/3rdparty/zstd/build/cmake
+        cmake -G "${{ env.CMAKE_VS }}" -A x64 -B .
+        cmake --build . --config Release
+
+    - name: build snappy
+      run: |
+        cd rdm/3rdparty/snappy
+        cmake -G "${{ env.CMAKE_VS }}" -A x64 -B .
+        cmake --build . --config Release
+
+    - name: build brotli
+      run: |
+        cd rdm/3rdparty/brotli
+        cmake -G "${{ env.CMAKE_VS }}" -A x64 -B .
+        cmake -DCMAKE_BUILD_TYPE=Release
+        cmake --build . --config Release
 
 #    # install python3  
 #    - name: install Python3
@@ -107,9 +128,9 @@ jobs:
 #        architecture: 'x64' # optional x64 or x86. Defaults to x64 if not specified
 
     # install python3
-    - name: install python37
+    - name: install python3
       shell: cmd
-      run: mklink /d C:\Python37-x64 C:\hostedtoolcache\windows\python\${{ env.PYTHON_EMBEDDED_VERSION }}\x64
+      run: mklink /d C:\Python${{ env.PY_LIB_VERSION }}-x64 C:\hostedtoolcache\windows\python\${{ env.PYTHON_EMBEDDED_VERSION }}\x64
 
     # pip install
     - name: pip install
@@ -139,24 +160,24 @@ jobs:
     - name: build
       shell: cmd
       env:
-        vc_arch: ${{ matrix.msvc_arch }}
+        vc_arch: x64
       run: |
         python rdm\build\utils\set_version.py ${{ env.VERSION }} > rdm\src\version.h
         cd rdm\src
         call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %vc_arch%
-        qmake rdm.pro CONFIG-=debug
+        qmake rdm.pro CONFIG-=debug "VERSION=${{ env.VERSION }}"
         nmake
 
-    # 缺少python37.dll
+    # 缺少python3.dll
     # fix formatter error, unicodedata _bz2
-    - name: add python37.dll
+    - name: add python3.dll
       shell: powershell
 #      env:
 #        PYTHON_EMBEDDED_VERSION: ${{ env.PYTHON_EMBEDDED_VERSION }}
       run: |
         cd rdm\build\windows\installer\resources
         wget "https://www.python.org/ftp/python/${{ env.PYTHON_EMBEDDED_VERSION }}/python-${{ env.PYTHON_EMBEDDED_VERSION }}-embed-amd64.zip" -outfile "python-embed.zip"
-        7z.exe x python-embed.zip python37.zip python3.dll python37.dll unicodedata.pyd _bz2.pyd
+        7z.exe x python-embed.zip python${{ env.PY_LIB_VERSION }}.zip python3.dll python${{ env.PY_LIB_VERSION }}.dll unicodedata.pyd _bz2.pyd
         del python-embed.zip
 
     # windeployqt
@@ -203,8 +224,32 @@ jobs:
 #     - name: build lz4
 #       run: |
 #         cd rdm/3rdparty/lz4/build/cmake
-#         cmake -DLZ4_BUNDLED_MODE=ON -DBUILD_SHARED_LIBS=ON --build .
+#         cmake -DLZ4_BUNDLED_MODE=ON -DBUILD_SHARED_LIBS=ON
+#         ls
 #         make -s -j 8
+
+#     - name: build zstd
+#       run: |
+#         cd rdm/3rdparty/zstd/build/cmake
+#         cmake . && make
+
+#     - name: build snappy
+#       run: |
+#         cd rdm/3rdparty/snappy
+#         cmake . && make
+
+#     - name: build brotli
+#       run: |
+#         cd rdm/3rdparty/brotli
+#         cmake -DCMAKE_BUILD_TYPE=Release
+#         cmake --build . --config Release
+
+#     - name: setup python
+#       run: |
+#         brew unlink python@3.10
+#         brew unlink python@3.9
+#         brew reinstall python@3.9
+#         brew link --overwrite python@3.9
 
 #     # install QT   
 #     - name: install QT
@@ -218,11 +263,11 @@ jobs:
 #         cd rdm
 #         cd ./src && cp ./resources/Info.plist.sample ./resources/Info.plist
     
-#     - name: setup python
-#       run: |
-#         brew unlink python@3.9
-#         brew install python@3.7
-#         brew link --overwrite python@3.7
+# #     - name: setup python
+# #       run: |
+# #         brew unlink python@3.10
+# #         brew install python@3.9
+# #         brew link --overwrite python@3.9
     
 #     # 使用私有库,egg-links时-t不能同时使用，--user解决权限问题
 #     # https://github.com/UnitedIncome/serverless-python-requirements/issues/240
@@ -263,7 +308,7 @@ jobs:
 #       run: |
 #         python ./rdm/build/utils/set_version.py ${{ env.VERSION }} > ./rdm/src/version.h
 #         cd rdm/src
-#         qmake rdm.pro CONFIG-=debug
+#         qmake rdm.pro CONFIG-=debug "VERSION=${{ env.VERSION }}"
 #         make -s -j 8
 
 #     - name: copy translations
